@@ -1,0 +1,204 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PackagingRequestType {
+  nueva
+  cambio
+  correccion
+  adaptacion
+  reimpresion
+  urgencia
+}
+
+enum PackagingRequestPriority {
+  baja
+  media
+  alta
+  urgente
+}
+
+enum PackagingRequestStatus {
+  solicitud_ingresada
+  en_revision
+  en_proceso
+  propuesta_enviada
+  ajustes_correcciones
+  aprobacion_diseno
+  aprobacion_calidad
+  aprobacion_producto
+  enviado_final
+  cerrado
+  rechazado
+  cancelado
+}
+
+enum PackagingTrafficLight {
+  verde
+  amarillo
+  rojo
+  gris
+}
+
+enum ChecklistItemStatus {
+  pendiente
+  en_proceso
+  completado
+  rechazado
+  no_aplica
+}
+
+enum ApprovalStage {
+  diseno
+  calidad
+  producto
+}
+
+enum ApprovalStatus {
+  pendiente
+  aprobado
+  rechazado
+}
+
+enum RequestFileType {
+  brief
+  originales
+  propuesta
+  correccion
+  final
+}
+
+model PackagingRequest {
+  id                  String                   @id @default(cuid())
+  code                String                   @unique
+  title               String
+  requestType         PackagingRequestType     @map("request_type")
+  brand               String
+  category            String
+  productName         String                   @map("product_name")
+  projectName         String?                  @map("project_name")
+  internalCode        String?                  @map("internal_code")
+  sku                 String?
+  ean                 String?
+  dun                 String?
+  requesterName       String                   @map("requester_name")
+  designOwnerName     String                   @map("design_owner_name")
+  productOwnerName    String                   @map("product_owner_name")
+  priority            PackagingRequestPriority
+  status              PackagingRequestStatus
+  requestDate         DateTime                 @map("request_date")
+  briefDate           DateTime?                @map("brief_date")
+  proposalDate        DateTime?                @map("proposal_date")
+  correctionDate      DateTime?                @map("correction_date")
+  finalDate           DateTime?                @map("final_date")
+  dueDate             DateTime                 @map("due_date")
+  trafficLight        PackagingTrafficLight    @map("traffic_light")
+  generalComments     String?                  @map("general_comments")
+  sharepointFolderUrl String?                  @map("sharepoint_folder_url")
+  isClosed            Boolean                  @default(false) @map("is_closed")
+  closedAt            DateTime?                @map("closed_at")
+  createdAt           DateTime                 @default(now()) @map("created_at")
+  updatedAt           DateTime                 @updatedAt @map("updated_at")
+
+  assignees           PackagingRequestAssignee[]
+  checklistItems      ChecklistItem[]
+  approvals           RequestApproval[]
+  fileLinks           RequestFileLink[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([requestType])
+  @@index([dueDate])
+  @@map("packaging_requests")
+}
+
+model PackagingRequestAssignee {
+  id           String           @id @default(cuid())
+  requestId    String           @map("request_id")
+  assigneeName String           @map("assignee_name")
+  role         String?
+  createdAt    DateTime         @default(now()) @map("created_at")
+  request      PackagingRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@map("packaging_request_assignees")
+}
+
+model ChecklistTemplate {
+  id                     String               @id @default(cuid())
+  requestType            PackagingRequestType @map("request_type")
+  itemName               String               @map("item_name")
+  itemOrder              Int                  @map("item_order")
+  isRequired             Boolean              @default(true) @map("is_required")
+  defaultResponsibleRole String?              @map("default_responsible_role")
+
+  @@unique([requestType, itemName])
+  @@map("checklist_templates")
+}
+
+model ChecklistItem {
+  id              String              @id @default(cuid())
+  requestId       String              @map("request_id")
+  templateItemName String             @map("template_item_name")
+  status          ChecklistItemStatus @default(pendiente)
+  responsibleName String?             @map("responsible_name")
+  completedAt     DateTime?           @map("completed_at")
+  comment         String?
+  relatedFileType RequestFileType?    @map("related_file_type")
+  sortOrder       Int                 @default(0) @map("sort_order")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  request         PackagingRequest    @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@map("checklist_items")
+}
+
+model RequestApproval {
+  id            String           @id @default(cuid())
+  requestId     String           @map("request_id")
+  approvalStage ApprovalStage    @map("approval_stage")
+  approverName  String           @map("approver_name")
+  status        ApprovalStatus   @default(pendiente)
+  comment       String?
+  decidedAt     DateTime?        @map("decided_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  request       PackagingRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, approvalStage])
+  @@map("request_approvals")
+}
+
+model RequestFileLink {
+  id           String           @id @default(cuid())
+  requestId    String           @map("request_id")
+  fileType     RequestFileType  @map("file_type")
+  label        String
+  url          String
+  versionLabel String?          @map("version_label")
+  uploadedBy   String?          @map("uploaded_by")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  request      PackagingRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@map("request_file_links")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  action     String
+  diffJson   Json?    @map("diff_json")
+  actor      String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
