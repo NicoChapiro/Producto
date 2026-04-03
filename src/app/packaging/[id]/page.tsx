@@ -1,17 +1,23 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 
 type RequestDetail = any;
 
-export default function PackagingRequestDetailPage({ params }: { params: { id: string } }) {
+export default function PackagingRequestDetailPage() {
+  const params = useParams<{ id: string }>();
+  const id = Array.isArray(params.id) ? params.id[0] : params.id;
+
   const [data, setData] = useState<RequestDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
+    if (!id) return;
+
     setLoading(true);
-    const response = await fetch(`/api/packaging/${params.id}`);
+    const response = await fetch(`/api/packaging/${id}`);
     if (response.ok) {
       setData(await response.json());
       setError(null);
@@ -23,13 +29,16 @@ export default function PackagingRequestDetailPage({ params }: { params: { id: s
   }
 
   useEffect(() => {
+    if (!id) return;
     refresh();
-  }, [params.id]);
+  }, [id]);
 
   async function updateGeneralData(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!id) return;
+
     const fd = new FormData(event.currentTarget);
-    const response = await fetch(`/api/packaging/${params.id}`, {
+    const response = await fetch(`/api/packaging/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -38,36 +47,44 @@ export default function PackagingRequestDetailPage({ params }: { params: { id: s
         generalComments: String(fd.get('generalComments') ?? '')
       })
     });
+
     if (!response.ok) {
       const body = await response.json().catch(() => ({ message: 'No se pudo actualizar la solicitud' }));
       setError(body.message ?? 'No se pudo actualizar la solicitud');
       return;
     }
+
     await refresh();
   }
 
   async function updateDates(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!id) return;
+
     const fd = new FormData(event.currentTarget);
-    const response = await fetch(`/api/packaging/${params.id}`, {
+    const response = await fetch(`/api/packaging/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         dueDate: String(fd.get('dueDate') ?? '')
       })
     });
+
     if (!response.ok) {
       const body = await response.json().catch(() => ({ message: 'No se pudo actualizar la fecha' }));
       setError(body.message ?? 'No se pudo actualizar la fecha');
       return;
     }
+
     await refresh();
   }
 
   async function addFileLink(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!id) return;
+
     const fd = new FormData(event.currentTarget);
-    const response = await fetch(`/api/packaging/${params.id}/file-links`, {
+    const response = await fetch(`/api/packaging/${id}/file-links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -76,24 +93,40 @@ export default function PackagingRequestDetailPage({ params }: { params: { id: s
         url: String(fd.get('url') ?? '')
       })
     });
+
     if (!response.ok) {
       const body = await response.json().catch(() => ({ message: 'No se pudo agregar el archivo' }));
       setError(body.message ?? 'No se pudo agregar el archivo');
       return;
     }
+
     (event.currentTarget as HTMLFormElement).reset();
     await refresh();
   }
 
-  if (loading || !data) return <main style={{ padding: 24 }}>Cargando...</main>;
+  if (!id || loading || !data) {
+    return <main style={{ padding: 24 }}>Cargando...</main>;
+  }
 
   return (
     <main style={{ padding: 24, display: 'grid', gap: 16, maxWidth: 1080, margin: '0 auto' }}>
       <section>
-        <h1 style={{ marginBottom: 4 }}>{data.code} · {data.title}</h1>
-        <p style={{ marginTop: 0 }}>Estado: <strong>{data.status}</strong> · Semáforo: <strong>{data.trafficLight}</strong></p>
+        <h1 style={{ marginBottom: 4 }}>
+          {data.code} · {data.title}
+        </h1>
+        <p style={{ marginTop: 0 }}>
+          Estado: <strong>{data.status}</strong> · Semáforo: <strong>{data.trafficLight}</strong>
+        </p>
         {error ? (
-          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: 10, borderRadius: 8, color: '#991b1b' }}>
+          <div
+            style={{
+              background: '#fef2f2',
+              border: '1px solid #fecaca',
+              padding: 10,
+              borderRadius: 8,
+              color: '#991b1b'
+            }}
+          >
             {error}
           </div>
         ) : null}
@@ -102,13 +135,37 @@ export default function PackagingRequestDetailPage({ params }: { params: { id: s
       <section style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 12 }}>
         <h2 style={{ marginTop: 0 }}>Datos generales</h2>
         <form onSubmit={updateGeneralData} style={{ display: 'grid', gap: 8, maxWidth: 640 }}>
-          <label>Título<input name="title" defaultValue={data.title} /></label>
+          <label>
+            Título
+            <input name="title" defaultValue={data.title} />
+          </label>
+
           <select name="status" defaultValue={data.status}>
-            {['solicitud_ingresada','en_revision','en_proceso','propuesta_enviada','ajustes_correcciones','aprobacion_diseno','aprobacion_calidad','aprobacion_producto','enviado_final','cerrado','rechazado','cancelado'].map((status) => (
-              <option key={status} value={status}>{status}</option>
+            {[
+              'solicitud_ingresada',
+              'en_revision',
+              'en_proceso',
+              'propuesta_enviada',
+              'ajustes_correcciones',
+              'aprobacion_diseno',
+              'aprobacion_calidad',
+              'aprobacion_producto',
+              'enviado_final',
+              'cerrado',
+              'rechazado',
+              'cancelado'
+            ].map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
             ))}
           </select>
-          <label>Comentarios generales<textarea name="generalComments" defaultValue={data.generalComments ?? ''} /></label>
+
+          <label>
+            Comentarios generales
+            <textarea name="generalComments" defaultValue={data.generalComments ?? ''} />
+          </label>
+
           <button type="submit">Guardar cambios</button>
         </form>
       </section>
@@ -116,9 +173,13 @@ export default function PackagingRequestDetailPage({ params }: { params: { id: s
       <section style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 12 }}>
         <h2 style={{ marginTop: 0 }}>Fechas</h2>
         <form onSubmit={updateDates} style={{ display: 'grid', gap: 8, maxWidth: 380 }}>
-          <label>Fecha de vencimiento<input type="date" name="dueDate" defaultValue={data.dueDate.slice(0, 10)} /></label>
+          <label>
+            Fecha de vencimiento
+            <input type="date" name="dueDate" defaultValue={data.dueDate?.slice(0, 10) ?? ''} />
+          </label>
           <button type="submit">Actualizar vencimiento</button>
         </form>
+
         <ul>
           <li>Request date: {data.requestDate?.slice(0, 10)}</li>
           <li>Brief date: {data.briefDate?.slice(0, 10) ?? '-'}</li>
@@ -134,8 +195,10 @@ export default function PackagingRequestDetailPage({ params }: { params: { id: s
           <li>Solicitante: {data.requesterName}</li>
           <li>Diseño: {data.designOwnerName}</li>
           <li>Producto: {data.productOwnerName}</li>
-          {data.assignees.map((assignee: any) => (
-            <li key={assignee.id}>{assignee.assigneeName} {assignee.role ? `(${assignee.role})` : ''}</li>
+          {(data.assignees ?? []).map((assignee: any) => (
+            <li key={assignee.id}>
+              {assignee.assigneeName} {assignee.role ? `(${assignee.role})` : ''}
+            </li>
           ))}
         </ul>
       </section>
@@ -143,8 +206,10 @@ export default function PackagingRequestDetailPage({ params }: { params: { id: s
       <section style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 12 }}>
         <h2>Checklist</h2>
         <ul>
-          {data.checklistItems.map((item: any) => (
-            <li key={item.id}>{item.templateItemName} - {item.status}</li>
+          {(data.checklistItems ?? []).map((item: any) => (
+            <li key={item.id}>
+              {item.templateItemName} - {item.status}
+            </li>
           ))}
         </ul>
       </section>
@@ -152,8 +217,10 @@ export default function PackagingRequestDetailPage({ params }: { params: { id: s
       <section style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 12 }}>
         <h2>Aprobaciones</h2>
         <ul>
-          {data.approvals.map((approval: any) => (
-            <li key={approval.id}>{approval.approvalStage} - {approval.approverName} - {approval.status}</li>
+          {(data.approvals ?? []).map((approval: any) => (
+            <li key={approval.id}>
+              {approval.approvalStage} - {approval.approverName} - {approval.status}
+            </li>
           ))}
         </ul>
       </section>
@@ -163,23 +230,33 @@ export default function PackagingRequestDetailPage({ params }: { params: { id: s
         <form onSubmit={addFileLink} style={{ display: 'grid', gap: 8, maxWidth: 640 }}>
           <select name="fileType" defaultValue="brief">
             {['brief', 'originales', 'propuesta', 'correccion', 'final'].map((type) => (
-              <option key={type} value={type}>{type}</option>
+              <option key={type} value={type}>
+                {type}
+              </option>
             ))}
           </select>
+
           <input name="label" placeholder="Etiqueta" required />
           <input name="url" placeholder="https://..." required />
+
           <button type="submit">Agregar link</button>
         </form>
+
         <ul>
-          {data.fileLinks.map((file: any) => (
-            <li key={file.id}><a href={file.url} target="_blank">{file.label}</a> ({file.fileType})</li>
+          {(data.fileLinks ?? []).map((file: any) => (
+            <li key={file.id}>
+              <a href={file.url} target="_blank" rel="noreferrer">
+                {file.label}
+              </a>{' '}
+              ({file.fileType})
+            </li>
           ))}
         </ul>
       </section>
 
       <section style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 12 }}>
         <h2>Historial</h2>
-        <History requestId={params.id} />
+        <History requestId={id} />
       </section>
     </main>
   );
