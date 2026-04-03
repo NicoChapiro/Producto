@@ -74,7 +74,8 @@ export default function PackagingRequestDetailPage() {
 
   async function addFileLink(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const fd = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const fd = new FormData(form);
     const response = await fetch(`/api/packaging/${id}/file-links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -89,7 +90,7 @@ export default function PackagingRequestDetailPage() {
       setError(body.message ?? 'No se pudo agregar el archivo');
       return;
     }
-    (event.currentTarget as HTMLFormElement).reset();
+    form.reset();
     await refresh();
   }
 
