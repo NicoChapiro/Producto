@@ -14,6 +14,9 @@ enum PackagingRequestType {
   adaptacion
   reimpresion
   urgencia
+  nuevo_producto
+  cambio_actualizacion
+  correccion_post_original
 }
 
 enum PackagingRequestPriority {
@@ -36,6 +39,26 @@ enum PackagingRequestStatus {
   cerrado
   rechazado
   cancelado
+  solicitud_creada
+  pendiente_insumos
+  lista_para_diseno
+  recepcionada_por_diseno
+  en_diseno
+  revision_interna_diseno
+  en_observaciones_correcciones
+  lista_para_aprobaciones_finales
+  aprobacion_final_jefe_diseno
+  aprobacion_solicitante
+  aprobacion_jefatura_producto
+  original_final_subido
+  recepcionado_por_producto
+  enviado_a_proveedor
+  observaciones_proveedor
+  prueba_color_digital
+  prueba_color_fisica
+  completo
+  urgencia_en_curso
+  reabierto_post_proveedor
 }
 
 enum PackagingTrafficLight {
@@ -73,6 +96,25 @@ enum RequestFileType {
   final
 }
 
+enum DesignRoundStatus {
+  abierta
+  cerrada
+}
+
+enum DesignRoundDecision {
+  aprobado
+  aprobado_con_observaciones_menores
+  con_cambios
+  rechazado
+}
+
+enum DesignRoundResult {
+  aprobada
+  aprobada_con_observaciones_menores
+  con_cambios
+  rechazada
+}
+
 model PackagingRequest {
   id                  String                   @id @default(cuid())
   code                String                   @unique
@@ -96,6 +138,15 @@ model PackagingRequest {
   proposalDate        DateTime?                @map("proposal_date")
   correctionDate      DateTime?                @map("correction_date")
   finalDate           DateTime?                @map("final_date")
+  deliveredAt         DateTime?                @map("delivered_at")
+  receivedByProductAt DateTime?                @map("received_by_product_at")
+  receivedByProductName String?                @map("received_by_product_name")
+  sentToSupplierAt    DateTime?                @map("sent_to_supplier_at")
+  sentToSupplierBy    String?                  @map("sent_to_supplier_by")
+  sentToSupplierComment String?                @map("sent_to_supplier_comment")
+  completedAt         DateTime?                @map("completed_at")
+  roundsCount         Int                      @default(0) @map("rounds_count")
+  requiresSupplierFlow Boolean                 @default(false) @map("requires_supplier_flow")
   dueDate             DateTime                 @map("due_date")
   trafficLight        PackagingTrafficLight    @map("traffic_light")
   generalComments     String?                  @map("general_comments")
@@ -109,12 +160,39 @@ model PackagingRequest {
   checklistItems      ChecklistItem[]
   approvals           RequestApproval[]
   fileLinks           RequestFileLink[]
+  designRounds        PackagingDesignRound[]
 
   @@index([status])
   @@index([priority])
   @@index([requestType])
   @@index([dueDate])
   @@map("packaging_requests")
+}
+
+model PackagingDesignRound {
+  id                         String            @id @default(cuid())
+  requestId                  String            @map("request_id")
+  roundNumber                Int               @map("round_number")
+  status                     DesignRoundStatus @default(abierta)
+  proposalUrl                String?           @map("proposal_url")
+  designComment              String?           @map("design_comment")
+  productComment             String?           @map("product_comment")
+  qualityComment             String?           @map("quality_comment")
+  productDecision            DesignRoundDecision? @map("product_decision")
+  qualityDecision            DesignRoundDecision? @map("quality_decision")
+  roundResult                DesignRoundResult?   @map("round_result")
+  minorObservationsResolved  Boolean           @default(false) @map("minor_observations_resolved")
+  sentAt                     DateTime?         @map("sent_at")
+  closedAt                   DateTime?         @map("closed_at")
+  createdBy                  String            @map("created_by")
+  createdAt                  DateTime          @default(now()) @map("created_at")
+  updatedAt                  DateTime          @updatedAt @map("updated_at")
+
+  request                    PackagingRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, roundNumber])
+  @@index([requestId])
+  @@map("packaging_design_rounds")
 }
 
 model PackagingRequestAssignee {

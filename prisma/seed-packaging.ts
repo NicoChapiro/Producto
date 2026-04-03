@@ -8,7 +8,10 @@ const templates: Record<PackagingRequestType, string[]> = {
   correccion: ['Ajuste solicitado', 'Ajuste aplicado', 'VB producto'],
   adaptacion: ['Brief recibido', 'Originales recibidos', 'Propuesta aprobada', 'VB producto', 'Artes finales enviados'],
   reimpresion: ['Solicitud validada', 'Archivo final confirmado', 'Enviado a proveedor'],
-  urgencia: ['Brief recibido', 'Priorización confirmada', 'Propuesta aprobada', 'VB producto', 'Envío final']
+  urgencia: ['Brief recibido', 'Priorización confirmada', 'Propuesta aprobada', 'VB producto', 'Envío final'],
+  nuevo_producto: ['Brief recibido', 'Nombre validado', 'Referencias visuales recibidas', 'Revisión interna diseño'],
+  cambio_actualizacion: ['Brief recibido', 'Cambio validado', 'Revisión interna diseño'],
+  correccion_post_original: ['Observaciones recibidas', 'Ajuste aplicado', 'Revisión interna diseño']
 };
 
 async function main() {

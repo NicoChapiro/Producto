@@ -2,6 +2,8 @@ import {
   ApprovalStage,
   ApprovalStatus,
   ChecklistItemStatus,
+  DesignRoundDecision,
+  DesignRoundStatus,
   PackagingRequestPriority,
   PackagingRequestStatus,
   PackagingRequestType,
@@ -52,6 +54,15 @@ export type UpdatePackagingRequestInput = Partial<
   >
 > & {
   status?: PackagingRequestStatus;
+  deliveredAt?: Date | null;
+  receivedByProductAt?: Date | null;
+  receivedByProductName?: string;
+  sentToSupplierAt?: Date | null;
+  sentToSupplierBy?: string;
+  sentToSupplierComment?: string;
+  completedAt?: Date | null;
+  roundsCount?: number;
+  requiresSupplierFlow?: boolean;
   actor?: string;
 };
 
@@ -75,6 +86,25 @@ export type AddFileLinkInput = {
   url: string;
   versionLabel?: string;
   uploadedBy?: string;
+  actor?: string;
+};
+
+export type CreateDesignRoundInput = {
+  proposalUrl?: string;
+  designComment?: string;
+  createdBy?: string;
+  actor?: string;
+};
+
+export type UpdateDesignRoundInput = {
+  proposalUrl?: string;
+  designComment?: string;
+  productComment?: string;
+  qualityComment?: string;
+  productDecision?: DesignRoundDecision;
+  qualityDecision?: DesignRoundDecision;
+  minorObservationsResolved?: boolean;
+  status?: DesignRoundStatus;
   actor?: string;
 };
 

@@ -1,7 +1,27 @@
-import { ApprovalStage, ApprovalStatus, ChecklistItemStatus, PackagingRequestPriority, PackagingRequestStatus, PackagingRequestType, RequestFileType } from '@prisma/client';
+import {
+  ApprovalStage,
+  ApprovalStatus,
+  ChecklistItemStatus,
+  DesignRoundDecision,
+  DesignRoundStatus,
+  PackagingRequestPriority,
+  PackagingRequestStatus,
+  PackagingRequestType,
+  RequestFileType
+} from '@prisma/client';
 import { ValidationError } from './errors';
 
-const requestTypes = new Set<PackagingRequestType>(['nueva', 'cambio', 'correccion', 'adaptacion', 'reimpresion', 'urgencia']);
+const requestTypes = new Set<PackagingRequestType>([
+  'nueva',
+  'cambio',
+  'correccion',
+  'adaptacion',
+  'reimpresion',
+  'urgencia',
+  'nuevo_producto',
+  'cambio_actualizacion',
+  'correccion_post_original'
+]);
 const priorities = new Set<PackagingRequestPriority>(['baja', 'media', 'alta', 'urgente']);
 const requestStatuses = new Set<PackagingRequestStatus>([
   'solicitud_ingresada',
@@ -15,12 +35,34 @@ const requestStatuses = new Set<PackagingRequestStatus>([
   'enviado_final',
   'cerrado',
   'rechazado',
-  'cancelado'
+  'cancelado',
+  'solicitud_creada',
+  'pendiente_insumos',
+  'lista_para_diseno',
+  'recepcionada_por_diseno',
+  'en_diseno',
+  'revision_interna_diseno',
+  'en_observaciones_correcciones',
+  'lista_para_aprobaciones_finales',
+  'aprobacion_final_jefe_diseno',
+  'aprobacion_solicitante',
+  'aprobacion_jefatura_producto',
+  'original_final_subido',
+  'recepcionado_por_producto',
+  'enviado_a_proveedor',
+  'observaciones_proveedor',
+  'prueba_color_digital',
+  'prueba_color_fisica',
+  'completo',
+  'urgencia_en_curso',
+  'reabierto_post_proveedor'
 ]);
 const checklistStatuses = new Set<ChecklistItemStatus>(['pendiente', 'en_proceso', 'completado', 'rechazado', 'no_aplica']);
 const approvalStages = new Set<ApprovalStage>(['diseno', 'calidad', 'producto']);
 const approvalStatuses = new Set<ApprovalStatus>(['pendiente', 'aprobado', 'rechazado']);
 const fileTypes = new Set<RequestFileType>(['brief', 'originales', 'propuesta', 'correccion', 'final']);
+const roundDecisions = new Set<DesignRoundDecision>(['aprobado', 'aprobado_con_observaciones_menores', 'con_cambios', 'rechazado']);
+const roundStatuses = new Set<DesignRoundStatus>(['abierta', 'cerrada']);
 
 function asObject(value: unknown, message: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -54,6 +96,13 @@ function parseDate(value: unknown, field: string): Date {
     throw new ValidationError(`Field "${field}" must be a valid date.`);
   }
   return parsed;
+}
+
+function optionalDate(value: unknown, field: string): Date | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  if (typeof value !== 'string') throw new ValidationError(`Field "${field}" must be a date string.`);
+  return parseDate(value, field);
 }
 
 export function validateCreateRequestPayload(payload: unknown) {
@@ -124,6 +173,25 @@ export function validateUpdateRequestPayload(payload: unknown) {
   if ('sharepointFolderUrl' in body) output.sharepointFolderUrl = optionalString(body.sharepointFolderUrl);
   if ('actor' in body) output.actor = optionalString(body.actor);
   if ('dueDate' in body) output.dueDate = parseDate(body.dueDate, 'dueDate');
+  if ('deliveredAt' in body) output.deliveredAt = optionalDate(body.deliveredAt, 'deliveredAt');
+  if ('receivedByProductAt' in body) output.receivedByProductAt = optionalDate(body.receivedByProductAt, 'receivedByProductAt');
+  if ('receivedByProductName' in body) output.receivedByProductName = optionalString(body.receivedByProductName);
+  if ('sentToSupplierAt' in body) output.sentToSupplierAt = optionalDate(body.sentToSupplierAt, 'sentToSupplierAt');
+  if ('sentToSupplierBy' in body) output.sentToSupplierBy = optionalString(body.sentToSupplierBy);
+  if ('sentToSupplierComment' in body) output.sentToSupplierComment = optionalString(body.sentToSupplierComment);
+  if ('completedAt' in body) output.completedAt = optionalDate(body.completedAt, 'completedAt');
+  if ('roundsCount' in body) {
+    if (typeof body.roundsCount !== 'number' || body.roundsCount < 0 || !Number.isInteger(body.roundsCount)) {
+      throw new ValidationError('Field "roundsCount" must be a positive integer.');
+    }
+    output.roundsCount = body.roundsCount;
+  }
+  if ('requiresSupplierFlow' in body) {
+    if (typeof body.requiresSupplierFlow !== 'boolean') {
+      throw new ValidationError('Field "requiresSupplierFlow" must be a boolean.');
+    }
+    output.requiresSupplierFlow = body.requiresSupplierFlow;
+  }
   if ('status' in body) {
     const status = requiredString(body.status, 'status') as PackagingRequestStatus;
     if (!requestStatuses.has(status)) throw new ValidationError('Invalid status.');
@@ -189,4 +257,63 @@ export function validateFileLinkPayload(payload: unknown) {
     uploadedBy: optionalString(body.uploadedBy),
     actor: optionalString(body.actor)
   };
+}
+
+export function validateCreateRoundPayload(payload: unknown) {
+  const body = asObject(payload, 'Invalid payload for round creation.');
+  const proposalUrl = optionalString(body.proposalUrl);
+  if (proposalUrl && !/^https?:\/\//i.test(proposalUrl)) {
+    throw new ValidationError('Field "proposalUrl" must be an http/https URL.');
+  }
+
+  return {
+    proposalUrl,
+    designComment: optionalString(body.designComment),
+    createdBy: optionalString(body.createdBy),
+    actor: optionalString(body.actor)
+  };
+}
+
+export function validateUpdateRoundPayload(payload: unknown) {
+  const body = asObject(payload, 'Invalid payload for round update.');
+  const output: Record<string, unknown> = {};
+
+  if ('proposalUrl' in body) {
+    const proposalUrl = optionalString(body.proposalUrl);
+    if (proposalUrl && !/^https?:\/\//i.test(proposalUrl)) {
+      throw new ValidationError('Field "proposalUrl" must be an http/https URL.');
+    }
+    output.proposalUrl = proposalUrl;
+  }
+  if ('designComment' in body) output.designComment = optionalString(body.designComment);
+  if ('productComment' in body) output.productComment = optionalString(body.productComment);
+  if ('qualityComment' in body) output.qualityComment = optionalString(body.qualityComment);
+  if ('minorObservationsResolved' in body) {
+    if (typeof body.minorObservationsResolved !== 'boolean') {
+      throw new ValidationError('Field "minorObservationsResolved" must be a boolean.');
+    }
+    output.minorObservationsResolved = body.minorObservationsResolved;
+  }
+
+  if ('productDecision' in body) {
+    const value = optionalString(body.productDecision) as DesignRoundDecision | undefined;
+    if (value && !roundDecisions.has(value)) throw new ValidationError('Invalid productDecision.');
+    output.productDecision = value;
+  }
+
+  if ('qualityDecision' in body) {
+    const value = optionalString(body.qualityDecision) as DesignRoundDecision | undefined;
+    if (value && !roundDecisions.has(value)) throw new ValidationError('Invalid qualityDecision.');
+    output.qualityDecision = value;
+  }
+
+  if ('status' in body) {
+    const value = requiredString(body.status, 'status') as DesignRoundStatus;
+    if (!roundStatuses.has(value)) throw new ValidationError('Invalid status.');
+    output.status = value;
+  }
+
+  if ('actor' in body) output.actor = optionalString(body.actor);
+
+  return output;
 }
