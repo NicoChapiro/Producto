@@ -1,17 +1,25 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 
 type RequestDetail = any;
 
-export default function PackagingRequestDetailPage({ params }: { params: { id: string } }) {
+export default function PackagingRequestDetailPage() {
+  const params = useParams<{ id: string | string[] }>();
+  const id = Array.isArray(params?.id) ? params.id[0] : (params?.id ?? '');
   const [data, setData] = useState<RequestDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
+    if (!id) {
+      setError('No se encontró el identificador de la solicitud');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const response = await fetch(`/api/packaging/${params.id}`);
+    const response = await fetch(`/api/packaging/${id}`);
     if (response.ok) {
       setData(await response.json());
       setError(null);
@@ -24,12 +32,12 @@ export default function PackagingRequestDetailPage({ params }: { params: { id: s
 
   useEffect(() => {
     refresh();
-  }, [params.id]);
+  }, [id]);
 
   async function updateGeneralData(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const fd = new FormData(event.currentTarget);
-    const response = await fetch(`/api/packaging/${params.id}`, {
+    const response = await fetch(`/api/packaging/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -49,7 +57,7 @@ export default function PackagingRequestDetailPage({ params }: { params: { id: s
   async function updateDates(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const fd = new FormData(event.currentTarget);
-    const response = await fetch(`/api/packaging/${params.id}`, {
+    const response = await fetch(`/api/packaging/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -66,8 +74,9 @@ export default function PackagingRequestDetailPage({ params }: { params: { id: s
 
   async function addFileLink(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const fd = new FormData(event.currentTarget);
-    const response = await fetch(`/api/packaging/${params.id}/file-links`, {
+    const form = event.currentTarget;
+    const fd = new FormData(form);
+    const response = await fetch(`/api/packaging/${id}/file-links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -81,7 +90,7 @@ export default function PackagingRequestDetailPage({ params }: { params: { id: s
       setError(body.message ?? 'No se pudo agregar el archivo');
       return;
     }
-    (event.currentTarget as HTMLFormElement).reset();
+    form.reset();
     await refresh();
   }
 
@@ -179,7 +188,7 @@ export default function PackagingRequestDetailPage({ params }: { params: { id: s
 
       <section style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 12 }}>
         <h2>Historial</h2>
-        <History requestId={params.id} />
+        <History requestId={id} />
       </section>
     </main>
   );
@@ -189,6 +198,7 @@ function History({ requestId }: { requestId: string }) {
   const [rows, setRows] = useState<any[]>([]);
 
   useEffect(() => {
+    if (!requestId) return;
     fetch(`/api/packaging/${requestId}/history`)
       .then((response) => response.json())
       .then(setRows);
