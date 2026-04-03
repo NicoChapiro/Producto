@@ -12,34 +12,49 @@ export default function NewPackagingRequestPage() {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     setError(null);
-    const payload = {
-      title: String(formData.get('title') ?? ''),
-      requestType: String(formData.get('requestType') ?? 'nuevo_producto'),
-      brand: String(formData.get('brand') ?? ''),
-      category: String(formData.get('category') ?? ''),
-      productName: String(formData.get('productName') ?? ''),
-      projectName: String(formData.get('projectName') ?? ''),
-      internalCode: String(formData.get('internalCode') ?? ''),
-      sku: String(formData.get('sku') ?? ''),
-      ean: String(formData.get('ean') ?? ''),
-      dun: String(formData.get('dun') ?? ''),
-      requesterName: String(formData.get('requesterName') ?? ''),
-      designOwnerName: String(formData.get('designOwnerName') ?? ''),
-      productOwnerName: String(formData.get('productOwnerName') ?? ''),
-      requestDate: String(formData.get('requestDate') ?? ''),
-      dueDate: String(formData.get('dueDate') ?? ''),
-      priority: String(formData.get('priority') ?? 'media'),
-      generalComments: String(formData.get('generalComments') ?? ''),
-      sharepointFolderUrl: String(formData.get('sharepointFolderUrl') ?? ''),
-      assignees: String(formData.get('assigneeName') ?? '')
-        ? [
-            {
-              assigneeName: String(formData.get('assigneeName')),
-              role: String(formData.get('assigneeRole') ?? '')
-            }
-          ]
-        : []
+    const getTrimmed = (field: string) => String(formData.get(field) ?? '').trim();
+    const assigneeName = getTrimmed('assigneeName');
+    const assigneeRole = getTrimmed('assigneeRole');
+
+    const payload: Record<string, unknown> = {
+      title: getTrimmed('title'),
+      requestType: getTrimmed('requestType') || 'nuevo_producto',
+      brand: getTrimmed('brand'),
+      category: getTrimmed('category'),
+      productName: getTrimmed('productName'),
+      requesterName: getTrimmed('requesterName'),
+      designOwnerName: getTrimmed('designOwnerName'),
+      productOwnerName: getTrimmed('productOwnerName'),
+      requestDate: getTrimmed('requestDate'),
+      dueDate: getTrimmed('dueDate'),
+      priority: getTrimmed('priority') || 'media'
     };
+
+    const optionalFields = [
+      'projectName',
+      'internalCode',
+      'sku',
+      'ean',
+      'dun',
+      'generalComments',
+      'sharepointFolderUrl'
+    ];
+
+    for (const field of optionalFields) {
+      const value = getTrimmed(field);
+      if (value) {
+        payload[field] = value;
+      }
+    }
+
+    if (assigneeName) {
+      payload.assignees = [
+        {
+          assigneeName,
+          ...(assigneeRole ? { role: assigneeRole } : {})
+        }
+      ];
+    }
 
     setLoading(true);
     const response = await fetch('/api/packaging', {
@@ -111,9 +126,6 @@ export default function NewPackagingRequestPage() {
                 <option value="reimpresion">Reimpresión</option>
                 <option value="urgencia">Urgencia</option>
                 <option value="correccion_post_original">Corrección post original</option>
-                <option value="nueva">(Legacy) Nueva</option>
-                <option value="cambio">(Legacy) Cambio</option>
-                <option value="adaptacion">(Legacy) Adaptación</option>
               </select>
             </label>
             <label>
