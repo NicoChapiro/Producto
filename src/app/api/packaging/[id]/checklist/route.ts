@@ -3,11 +3,12 @@ import { toHttpError } from '@/modules/packaging/errors';
 import { packagingService } from '@/modules/packaging/service';
 import { validateChecklistPayload } from '@/modules/packaging/validators';
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const body = await request.json();
     const payload = validateChecklistPayload(body);
-    const updated = await packagingService.updateChecklistItem(params.id, payload.checklistItemId, payload);
+    const updated = await packagingService.updateChecklistItem(id, payload.checklistItemId, payload);
     return NextResponse.json(updated);
   } catch (error) {
     const http = toHttpError(error);
