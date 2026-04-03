@@ -1,4 +1,4 @@
-import { ApprovalStage, Prisma } from '@prisma/client';
+import { ApprovalStage, DesignRoundStatus, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 
 export const packagingRepository = {
@@ -47,16 +47,30 @@ export const packagingRepository = {
         assignees: true,
         checklistItems: { orderBy: { sortOrder: 'asc' } },
         approvals: { orderBy: { createdAt: 'asc' } },
-        fileLinks: { orderBy: { createdAt: 'desc' } }
+        fileLinks: { orderBy: { createdAt: 'desc' } },
+        designRounds: { orderBy: { roundNumber: 'asc' } }
       }
     });
   },
 
-  getRequestHistory(id: string) {
+  async getRequestHistory(id: string) {
+    const roundIds = await prisma.packagingDesignRound.findMany({
+      where: { requestId: id },
+      select: { id: true }
+    });
+
     return prisma.auditLog.findMany({
       where: {
-        entityType: 'packaging_request',
-        entityId: id
+        OR: [
+          {
+            entityType: 'packaging_request',
+            entityId: id
+          },
+          {
+            entityType: 'packaging_design_round',
+            entityId: { in: roundIds.map((row) => row.id) }
+          }
+        ]
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -84,6 +98,70 @@ export const packagingRepository = {
           approvalStage: stage
         }
       }
+    });
+  },
+
+  getInputReadinessSignals(requestId: string) {
+    return prisma.packagingRequest.findUnique({
+      where: { id: requestId },
+      select: {
+        productName: true,
+        checklistItems: {
+          where: {
+            status: 'completado',
+            OR: [
+              { templateItemName: { equals: 'Brief recibido', mode: 'insensitive' } },
+              { templateItemName: { equals: 'Brief completo', mode: 'insensitive' } },
+              { templateItemName: { equals: 'Referencias visuales recibidas', mode: 'insensitive' } }
+            ]
+          },
+          select: { templateItemName: true }
+        },
+        fileLinks: {
+          where: {
+            fileType: {
+              in: ['brief', 'originales', 'propuesta']
+            }
+          },
+          select: { fileType: true }
+        }
+      }
+    });
+  },
+
+  listRounds(requestId: string) {
+    return prisma.packagingDesignRound.findMany({
+      where: { requestId },
+      orderBy: { roundNumber: 'asc' }
+    });
+  },
+
+  getRoundById(requestId: string, roundId: string) {
+    return prisma.packagingDesignRound.findFirst({
+      where: { id: roundId, requestId }
+    });
+  },
+
+  getLastRound(requestId: string) {
+    return prisma.packagingDesignRound.findFirst({
+      where: { requestId },
+      orderBy: { roundNumber: 'desc' }
+    });
+  },
+
+  getLatestClosedRound(requestId: string) {
+    return prisma.packagingDesignRound.findFirst({
+      where: {
+        requestId,
+        status: 'cerrada'
+      },
+      orderBy: { roundNumber: 'desc' }
+    });
+  },
+
+  countOpenRounds(requestId: string) {
+    return prisma.packagingDesignRound.count({
+      where: { requestId, status: DesignRoundStatus.abierta }
     });
   }
 };

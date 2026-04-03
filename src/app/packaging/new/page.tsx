@@ -14,7 +14,7 @@ export default function NewPackagingRequestPage() {
     setError(null);
     const payload = {
       title: String(formData.get('title') ?? ''),
-      requestType: String(formData.get('requestType') ?? 'nueva'),
+      requestType: String(formData.get('requestType') ?? 'nuevo_producto'),
       brand: String(formData.get('brand') ?? ''),
       category: String(formData.get('category') ?? ''),
       productName: String(formData.get('productName') ?? ''),
@@ -104,13 +104,16 @@ export default function NewPackagingRequestPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <label>
               Tipo de solicitud
-              <select name="requestType" defaultValue="nueva">
-                <option value="nueva">Nueva</option>
-                <option value="cambio">Cambio</option>
+              <select name="requestType" defaultValue="nuevo_producto">
+                <option value="nuevo_producto">Nuevo producto</option>
+                <option value="cambio_actualizacion">Cambio / actualización</option>
                 <option value="correccion">Corrección</option>
-                <option value="adaptacion">Adaptación</option>
                 <option value="reimpresion">Reimpresión</option>
                 <option value="urgencia">Urgencia</option>
+                <option value="correccion_post_original">Corrección post original</option>
+                <option value="nueva">(Legacy) Nueva</option>
+                <option value="cambio">(Legacy) Cambio</option>
+                <option value="adaptacion">(Legacy) Adaptación</option>
               </select>
             </label>
             <label>

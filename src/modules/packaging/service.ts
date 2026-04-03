@@ -1,26 +1,39 @@
-import { ApprovalStage, ApprovalStatus, PackagingRequestStatus } from '@prisma/client';
+import {
+  ApprovalStage,
+  ApprovalStatus,
+  PackagingRequestStatus
+} from '@prisma/client';
 import { computeTrafficLight } from './traffic-light';
 import {
   AddFileLinkInput,
+  CreateDesignRoundInput,
   CreatePackagingRequestInput,
   DEFAULT_APPROVERS,
   UpdateApprovalInput,
   UpdateChecklistItemInput,
+  UpdateDesignRoundInput,
   UpdatePackagingRequestInput
 } from './types';
 import { packagingRepository, prisma } from './repository';
 import { ConflictError, NotFoundError } from './errors';
+import {
+  canCloseRound,
+  canMoveToFinalApprovals,
+  computeRoundResult,
+  isAllowedStatusTransition,
+  requiresStrictInputGate
+} from './flow-rules';
 
 function nextCodeFrom(lastCode?: string) {
   const current = Number(lastCode?.split('-')[1] ?? 0) + 1;
   return `SOL-${String(current).padStart(4, '0')}`;
 }
 
-async function logAudit(requestId: string, action: string, actor = 'system', diffJson?: unknown) {
+async function logAudit(entityType: 'packaging_request' | 'packaging_design_round', entityId: string, action: string, actor = 'system', diffJson?: unknown) {
   await prisma.auditLog.create({
     data: {
-      entityType: 'packaging_request',
-      entityId: requestId,
+      entityType,
+      entityId,
       action,
       actor,
       diffJson: diffJson ? (diffJson as object) : undefined
@@ -29,6 +42,13 @@ async function logAudit(requestId: string, action: string, actor = 'system', dif
 }
 
 async function assertStatusTransition(requestId: string, nextStatus: PackagingRequestStatus) {
+  const request = await prisma.packagingRequest.findUnique({ where: { id: requestId } });
+  if (!request) throw new NotFoundError('Solicitud no encontrada.');
+
+  if (!isAllowedStatusTransition({ from: request.status, to: nextStatus })) {
+    throw new ConflictError(`Transición no permitida: ${request.status} -> ${nextStatus}.`);
+  }
+
   if (nextStatus === 'aprobacion_calidad') {
     const diseno = await packagingRepository.getApproval(requestId, 'diseno');
     if (!diseno || diseno.status !== 'aprobado') {
@@ -40,6 +60,41 @@ async function assertStatusTransition(requestId: string, nextStatus: PackagingRe
     const calidad = await packagingRepository.getApproval(requestId, 'calidad');
     if (!calidad || calidad.status !== 'aprobado') {
       throw new ConflictError('No se puede pasar a aprobacion_producto sin aprobación de calidad.');
+    }
+  }
+
+  if (nextStatus === 'lista_para_diseno' && requiresStrictInputGate(request.requestType)) {
+    const inputSignals = await packagingRepository.getInputReadinessSignals(requestId);
+    const checklistItems = inputSignals?.checklistItems ?? [];
+    const fileLinks = inputSignals?.fileLinks ?? [];
+
+    const briefReadyFromChecklist = checklistItems.some((item) => item.templateItemName.toLowerCase().includes('brief'));
+    const visualReadyFromChecklist = checklistItems.some((item) => item.templateItemName.toLowerCase().includes('referencias visuales'));
+    const briefReadyFromFiles = fileLinks.some((file) => file.fileType === 'brief');
+    const visualReadyFromFiles = fileLinks.some((file) => ['originales', 'propuesta'].includes(file.fileType));
+
+    const briefReady = briefReadyFromChecklist || briefReadyFromFiles;
+    const visualRefsReady = visualReadyFromChecklist || visualReadyFromFiles;
+
+    if (!request.productName?.trim() || !briefReady || !visualRefsReady) {
+      throw new ConflictError('Nuevo producto requiere brief completo, nombre y referencias visuales para pasar a lista_para_diseno.');
+    }
+  }
+
+  if (nextStatus === 'propuesta_enviada') {
+    if (!['revision_interna_diseno', 'en_proceso'].includes(request.status)) {
+      throw new ConflictError('No se puede pasar a propuesta_enviada sin revisión interna de diseño.');
+    }
+  }
+
+  if (nextStatus === 'lista_para_aprobaciones_finales') {
+    const latestClosed = await packagingRepository.getLatestClosedRound(requestId);
+    if (!latestClosed) {
+      throw new ConflictError('No se puede pasar a lista_para_aprobaciones_finales sin una ronda cerrada.');
+    }
+
+    if (!canMoveToFinalApprovals(latestClosed.roundResult, latestClosed.minorObservationsResolved)) {
+      throw new ConflictError('La última ronda no habilita aprobaciones finales.');
     }
   }
 
@@ -149,7 +204,6 @@ export const packagingService = {
     if (!current) throw new NotFoundError('Solicitud no encontrada.');
 
     if (input.status && input.status !== current.status) {
-      // TODO: reemplazar por validación real de rol cuando exista auth.
       await assertStatusTransition(id, input.status);
     }
 
@@ -167,21 +221,142 @@ export const packagingService = {
       }
     });
 
-    await logAudit(id, 'request_updated', input.actor, input);
+    await logAudit('packaging_request', id, 'request_updated', input.actor, input);
 
     if (input.status && input.status !== current.status) {
-      await logAudit(id, 'status_changed', input.actor, {
+      await logAudit('packaging_request', id, 'status_changed', input.actor, {
         from: current.status,
         to: input.status
       });
     }
 
     if (input.dueDate && input.dueDate.getTime() !== current.dueDate.getTime()) {
-      await logAudit(id, 'due_date_changed', input.actor, {
+      await logAudit('packaging_request', id, 'due_date_changed', input.actor, {
         from: current.dueDate,
         to: input.dueDate
       });
     }
+
+    return updated;
+  },
+
+  async listDesignRounds(requestId: string) {
+    const request = await prisma.packagingRequest.findUnique({ where: { id: requestId }, select: { id: true } });
+    if (!request) throw new NotFoundError('Solicitud no encontrada.');
+    return packagingRepository.listRounds(requestId);
+  },
+
+  async createDesignRound(requestId: string, input: CreateDesignRoundInput) {
+    const request = await prisma.packagingRequest.findUnique({ where: { id: requestId }, select: { id: true } });
+    if (!request) throw new NotFoundError('Solicitud no encontrada.');
+
+    const openRounds = await packagingRepository.countOpenRounds(requestId);
+    if (openRounds > 0) {
+      throw new ConflictError('No se puede crear una nueva ronda mientras exista una ronda abierta.');
+    }
+
+    const lastRound = await packagingRepository.getLastRound(requestId);
+    const nextRoundNumber = (lastRound?.roundNumber ?? 0) + 1;
+
+    const created = await prisma.$transaction(async (tx) => {
+      const round = await tx.packagingDesignRound.create({
+        data: {
+          requestId,
+          roundNumber: nextRoundNumber,
+          proposalUrl: input.proposalUrl,
+          designComment: input.designComment,
+          createdBy: input.createdBy ?? input.actor ?? 'system',
+          sentAt: new Date()
+        }
+      });
+
+      await tx.packagingRequest.update({
+        where: { id: requestId },
+        data: {
+          roundsCount: nextRoundNumber,
+          status: 'en_observaciones_correcciones'
+        }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          entityType: 'packaging_design_round',
+          entityId: round.id,
+          action: 'design_round_created',
+          actor: input.actor ?? input.createdBy ?? 'system',
+          diffJson: { requestId, roundNumber: nextRoundNumber }
+        }
+      });
+
+      return round;
+    });
+
+    return created;
+  },
+
+  async updateDesignRound(requestId: string, roundId: string, input: UpdateDesignRoundInput) {
+    const round = await packagingRepository.getRoundById(requestId, roundId);
+    if (!round) throw new NotFoundError('Ronda no encontrada.');
+
+    const shouldClose = input.status === 'cerrada';
+    const nextProductDecision = input.productDecision ?? round.productDecision;
+    const nextQualityDecision = input.qualityDecision ?? round.qualityDecision;
+
+    if (shouldClose && !canCloseRound(nextProductDecision, nextQualityDecision)) {
+      throw new ConflictError('No se puede cerrar la ronda sin decisión de Producto y Calidad.');
+    }
+
+    let roundResult = round.roundResult;
+    if (nextProductDecision && nextQualityDecision) {
+      roundResult = computeRoundResult(nextProductDecision, nextQualityDecision);
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const changed = await tx.packagingDesignRound.update({
+        where: { id: roundId },
+        data: {
+          proposalUrl: input.proposalUrl,
+          designComment: input.designComment,
+          productComment: input.productComment,
+          qualityComment: input.qualityComment,
+          productDecision: input.productDecision,
+          qualityDecision: input.qualityDecision,
+          minorObservationsResolved: input.minorObservationsResolved,
+          status: input.status,
+          roundResult,
+          closedAt: shouldClose ? new Date() : round.closedAt
+        }
+      });
+
+      if (shouldClose && roundResult) {
+        const requestStatus: PackagingRequestStatus = canMoveToFinalApprovals(roundResult, changed.minorObservationsResolved)
+          ? 'lista_para_aprobaciones_finales'
+          : 'en_observaciones_correcciones';
+
+        await tx.packagingRequest.update({
+          where: { id: requestId },
+          data: {
+            status: requestStatus
+          }
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          entityType: 'packaging_design_round',
+          entityId: roundId,
+          action: 'design_round_updated',
+          actor: input.actor ?? 'system',
+          diffJson: {
+            requestId,
+            status: input.status,
+            roundResult
+          }
+        }
+      });
+
+      return changed;
+    });
 
     return updated;
   },
@@ -203,7 +378,7 @@ export const packagingService = {
       }
     });
 
-    await logAudit(requestId, 'checklist_item_updated', input.actor, {
+    await logAudit('packaging_request', requestId, 'checklist_item_updated', input.actor, {
       checklistItemId,
       status: input.status
     });
@@ -251,13 +426,13 @@ export const packagingService = {
           status: 'ajustes_correcciones'
         }
       });
-      await logAudit(requestId, 'status_changed', input.actor, {
+      await logAudit('packaging_request', requestId, 'status_changed', input.actor, {
         reason: 'approval_rejected',
         to: 'ajustes_correcciones'
       });
     }
 
-    await logAudit(requestId, 'approval_updated', input.actor, {
+    await logAudit('packaging_request', requestId, 'approval_updated', input.actor, {
       stage,
       status: input.status
     });
@@ -282,7 +457,7 @@ export const packagingService = {
       }
     });
 
-    await logAudit(requestId, 'file_link_added', input.actor, {
+    await logAudit('packaging_request', requestId, 'file_link_added', input.actor, {
       fileType: input.fileType,
       label: input.label
     });
@@ -304,7 +479,7 @@ export const packagingService = {
       }
     });
 
-    await logAudit(requestId, 'assignee_added', actor, { assigneeName, role });
+    await logAudit('packaging_request', requestId, 'assignee_added', actor, { assigneeName, role });
 
     return created;
   }
